@@ -14,6 +14,7 @@
 
 import abc
 import glob
+import json
 import math
 import os
 import types
@@ -972,6 +973,26 @@ class Cluster(ClusterBase):
         else:
             return "NodeRestriction"
 
+    def _get_kubeapi_options(self) -> list:
+        """Get list of additional options for the kube API server.
+
+        Accepts either:
+            - A plain string in format "--foo=bar,--baz=bat"
+            - A JSON string for more complex arguments
+              eg '{ "-feature-gates": "ContextualLogging=true,GracefulNodeShutdown=true" }'
+
+        Returns a list of "key=value" argument strings
+        """
+        options_label = self.cluster.labels.get("kubeapi_options", "")
+        try:
+            json_opts = json.loads(options_label)
+            if isinstance(json_opts, dict):
+                return [f"{k}={v}" for k, v in json_opts.items()]
+        except (json.JSONDecodeError, ValueError):
+            pass
+        # else: fall back to treating as a comma-separated list
+        return options_label.split(",")
+
     def get_object(self) -> dict:
         osc = clients.get_openstack_api(self.context)
         default_volume_type = osc.cinder().volume_types.default()
@@ -1291,6 +1312,10 @@ class Cluster(ClusterBase):
                         {
                             "name": "admissionControlList",
                             "value": self._get_admission_control_list(),
+                        },
+                        {
+                            "name": "kubeAPIOptions",
+                            "value": self._get_kubeapi_options(),
                         },
                     ],
                 },
